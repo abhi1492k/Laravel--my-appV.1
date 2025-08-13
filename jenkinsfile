@@ -1,0 +1,70 @@
+pipeline {
+    agent any
+
+    environment {
+        DEPLOY_PATH = '/var/www/my-appV.1' // Adjust as needed
+        GIT_URL = 'https://github.com/abhi1492k/Laravel--my-appV.1.git'
+        BRANCH = 'main'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main', url: 'https://github.com/abhi1492k/Laravel--my-appV.1.git'
+            }
+        }
+        stage('PHP Lint') {
+            steps {
+                // Safe PHP syntax check before building
+                sh 'find . -path ./vendor -prune -o -type f -name "*.php" -print | xargs -P 4 -n 1 php -l'
+            }
+        }
+        stage('Dependencies') {
+            steps {
+                sh 'composer install --no-interaction --prefer-dist --optimize-autoloader'
+                sh 'cp .env.example .env'
+                sh 'php artisan key:generate'
+            }
+        }
+        stage('Clear Cache') {
+            steps {
+                sh 'php artisan cache:clear'
+                sh 'php artisan config:clear'
+                sh 'php artisan route:clear'
+                sh 'php artisan view:clear'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh './vendor/bin/phpunit'
+            }
+        }
+        stage('Build Assets') {
+            steps {
+                sh 'npm install'
+                sh 'npm run build'
+                // If using Vite or other bundlers, replace with appropriate commands
+            }
+        }
+        stage('Deploy') {
+            steps {
+                sh "rsync -avz --exclude='.git' --exclude='node_modules' --exclude='tests' ./ ${DEPLOY_PATH}/"
+                // Post-deploy cache build for optimized performance
+                sh "php ${DEPLOY_PATH}/artisan config:cache"
+                sh "php ${DEPLOY_PATH}/artisan route:cache"
+                sh "php ${DEPLOY_PATH}/artisan view:cache"
+                sh "php ${DEPLOY_PATH}/artisan migrate --force"
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment completed successfully.'
+        }
+        failure {
+            echo 'Deployment failed.'
+        }
+    }
+}
+
